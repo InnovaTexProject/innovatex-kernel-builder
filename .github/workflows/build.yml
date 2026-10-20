@@ -3,23 +3,14 @@ name: InnovaTex Amlogic S905X4 Kernel Builder
 on:
   workflow_dispatch:
     inputs:
-      build_mode:
-        description: 'Pilih Mode Build'
+      build_target:
+        description: 'Pilih Target Build Kernel'
         required: true
-        default: 'fast_devmfc_package'
+        default: 'linux-7.3-mainline'
         type: choice
         options:
-          - 'fast_devmfc_package'
-          - 'full_source_compile'
-      kernel_branch:
-        description: 'Branch Devmfc Linux (hanya untuk mode full_source_compile)'
-        required: false
-        default: 'meson64-6.14'
-        type: choice
-        options:
-          - 'meson64-6.14'
-          - 'meson64-6.12'
-          - 'meson64-6.6'
+          - 'linux-7.3-mainline'
+          - 'devmfc-lts-package'
   push:
     branches:
       - main
@@ -29,6 +20,7 @@ on:
       - 'configs/**'
       - 'drivers/**'
       - 'firmware/**'
+      - 'dtb_patches/**'
       - 'boot_scripts/**'
 
 permissions:
@@ -36,7 +28,7 @@ permissions:
 
 jobs:
   build:
-    name: Build & Package InnovaTex Kernel
+    name: Build InnovaTex Kernel for S905X4
     runs-on: ubuntu-24.04
 
     steps:
@@ -50,7 +42,7 @@ jobs:
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             bison flex libssl-dev bc kmod dosfstools mtools \
             libncurses5-dev libelf-dev ccache zip tar xz-utils zstd \
-            curl wget binutils-aarch64-linux-gnu
+            curl wget binutils-aarch64-linux-gnu device-tree-compiler
 
       - name: 📦 Setup Output Directories
         run: |
@@ -60,71 +52,26 @@ jobs:
           mkdir -p build_tmp
 
       # =========================================================================
-      # MODE 1: FAST DEVMFC PACKAGE (LTS 6.18.55) (~2 Menit)
+      # MODE 1: LINUX 7.3 MAINLINE COMPILE (ARCH NATIVE) (~10 Menit)
       # =========================================================================
-      - name: ⚡ Mode Fast Devmfc Package (6.18.55-meson64)
-        if: ${{ github.event_name == 'push' || inputs.build_mode == 'fast_devmfc_package' }}
+      - name: 🚀 Compile Linux 7.3 Mainline for Amlogic S905X4
+        if: ${{ github.event_name == 'push' || inputs.build_target == 'linux-7.3-mainline' }}
         run: |
-          echo ">>> Menjalankan Fast Devmfc Package untuk Kernel 6.18.55-meson64..."
-          cd build_tmp
+          echo ">>> Downloading Linux Kernel 7.3 source from kernel.org..."
+          wget -q -c https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.tar.xz
+          tar -xf linux-7.3.tar.xz
+          cd linux-7.3
           
-          # Download official deb packages dari Devmfc
-          wget -q https://github.com/devmfc/debian-on-amlogic/releases/download/v6.18.55/linux-image-6.18.55-meson64_20261004_arm64.deb
-          wget -q https://github.com/devmfc/debian-on-amlogic/releases/download/v6.18.55/linux-headers-6.18.55-meson64_20261004_arm64.deb
-          
-          # Ekstrak biner kernel & DTB & modules
-          dpkg-deb -x linux-image-6.18.55-meson64_20261004_arm64.deb pkg_img
-          dpkg-deb -x linux-headers-6.18.55-meson64_20261004_arm64.deb pkg_hdr
-          
-          # Copy modules
-          cp -r pkg_img/lib/modules/* ../dist/rootfs/lib/modules/
-          
-          # Copy biner kernel dan DTB
-          KERNEL_VER="6.18.55-meson64"
-          echo "KERNEL_RELEASE=${KERNEL_VER}" >> $GITHUB_ENV
-          
-          # Cari file vmlinuz
-          cp pkg_img/boot/vmlinuz-${KERNEL_VER} ../dist/boot/vmlinuz-${KERNEL_VER}
-          cp pkg_img/boot/config-${KERNEL_VER} ../dist/boot/config-${KERNEL_VER} || cp ../configs/config-6.18.55-meson64.config ../dist/boot/config-${KERNEL_VER}
-          
-          # Cari folder DTB
-          mkdir -p ../dist/boot/dtb-${KERNEL_VER}/amlogic
-          if [ -d pkg_img/boot/dtb-${KERNEL_VER} ]; then
-            cp -r pkg_img/boot/dtb-${KERNEL_VER}/* ../dist/boot/dtb-${KERNEL_VER}/
-          elif [ -d pkg_img/usr/lib/linux-image-${KERNEL_VER} ]; then
-            cp -r pkg_img/usr/lib/linux-image-${KERNEL_VER}/* ../dist/boot/dtb-${KERNEL_VER}/
-          fi
-          
-          # Compile Driver Unisoc UWE5631 menggunakan headers
-          cd ..
-          echo ">>> Mengompilasi Driver Unisoc UWE5631..."
-          HDR_DIR="$(pwd)/build_tmp/pkg_hdr/usr/src/linux-headers-${KERNEL_VER}"
-          
-          if [ -d "${HDR_DIR}" ]; then
-            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/BSP" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
-            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/WIFI" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
-            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/BT/tty-sdio" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
-            
-            TARGET_MOD_DIR="dist/rootfs/lib/modules/${KERNEL_VER}/kernel/drivers/net/wireless"
-            mkdir -p "${TARGET_MOD_DIR}"
-            find drivers/unisoc -name "*.ko" -exec cp {} "${TARGET_MOD_DIR}/" \;
-          fi
-
-      # =========================================================================
-      # MODE 2: FULL SOURCE COMPILE (Devmfc Linux Meson64) (~12 Menit)
-      # =========================================================================
-      - name: 🏗️ Mode Full Source Compile (Devmfc Linux Tree)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'full_source_compile' }}
-        run: |
-          BRANCH="${{ inputs.kernel_branch }}"
-          echo ">>> Cloning Devmfc Linux Kernel branch ${BRANCH}..."
-          git clone --depth 1 --branch "${BRANCH}" https://github.com/devmfc/linux.git linux_src
-          
-          cd linux_src
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # Konfigurasi Meson64 defconfig
+          echo ">>> Injecting S905X4 SC2 Device Tree & Patches..."
+          # Salin DTB & DTS Devmfc
+          cp ../dtb_patches/meson-sc2-ah212-generic.* arch/arm64/boot/dts/amlogic/ || true
+          # Daftarkan ke Makefile dts amlogic
+          echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
+          
+          # Setup Kernel Config
           if [ -f ../configs/config-6.18.55-meson64.config ]; then
             cp ../configs/config-6.18.55-meson64.config .config
             make ARCH=arm64 olddefconfig
@@ -132,32 +79,71 @@ jobs:
             make ARCH=arm64 defconfig
           fi
           
-          echo ">>> Compiling Kernel Image & DTBs..."
+          echo ">>> Compiling Linux 7.3 Kernel Image & DTBs..."
           make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
           
           KERNEL_VER=$(make -s ARCH=arm64 kernelrelease)
           echo "KERNEL_RELEASE=${KERNEL_VER}" >> $GITHUB_ENV
           
-          # Install modul
+          # Install modul ke rootfs
           make ARCH=arm64 INSTALL_MOD_PATH=../dist/rootfs modules_install
           
-          # Copy Boot outputs
           cd ..
-          cp linux_src/arch/arm64/boot/Image dist/boot/vmlinuz-${KERNEL_VER}
-          cp linux_src/.config dist/boot/config-${KERNEL_VER}
+          cp linux-7.3/arch/arm64/boot/Image dist/boot/vmlinuz-${KERNEL_VER}
+          cp linux-7.3/.config dist/boot/config-${KERNEL_VER}
           
           mkdir -p dist/boot/dtb-${KERNEL_VER}/amlogic
-          find linux_src/arch/arm64/boot/dts/amlogic/ -name "*.dtb" -exec cp {} dist/boot/dtb-${KERNEL_VER}/amlogic/ \;
+          find linux-7.3/arch/arm64/boot/dts/amlogic/ -name "*.dtb" -exec cp {} dist/boot/dtb-${KERNEL_VER}/amlogic/ \;
+          # Pastikan DTB ah212 generic ada
+          cp dtb_patches/meson-sc2-ah212-generic.dtb dist/boot/dtb-${KERNEL_VER}/amlogic/ || true
           
-          # Compile Unisoc drivers against freshly built kernel
-          echo ">>> Compiling Driver Unisoc UWE5631..."
-          make -C "$(pwd)/linux_src" M="$(pwd)/drivers/unisoc/BSP" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
-          make -C "$(pwd)/linux_src" M="$(pwd)/drivers/unisoc/WIFI" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
-          make -C "$(pwd)/linux_src" M="$(pwd)/drivers/unisoc/BT/tty-sdio" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+          # Compile Unisoc drivers
+          echo ">>> Compiling Driver Unisoc UWE5631 against Linux 7.3..."
+          make -C "$(pwd)/linux-7.3" M="$(pwd)/drivers/unisoc/BSP" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+          make -C "$(pwd)/linux-7.3" M="$(pwd)/drivers/unisoc/WIFI" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+          make -C "$(pwd)/linux-7.3" M="$(pwd)/drivers/unisoc/BT/tty-sdio" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
           
           TARGET_MOD_DIR="dist/rootfs/lib/modules/${KERNEL_VER}/kernel/drivers/net/wireless"
           mkdir -p "${TARGET_MOD_DIR}"
           find drivers/unisoc -name "*.ko" -exec cp {} "${TARGET_MOD_DIR}/" \;
+
+      # =========================================================================
+      # MODE 2: DEVMFC LTS PACKAGE FALLBACK
+      # =========================================================================
+      - name: ⚡ Mode Devmfc LTS Package (Fallback)
+        if: ${{ inputs.build_target == 'devmfc-lts-package' }}
+        run: |
+          echo ">>> Menjalankan Fast Devmfc Package untuk Kernel 6.18.55-meson64..."
+          cd build_tmp
+          wget -q https://github.com/devmfc/debian-on-amlogic/releases/download/v6.18.55/linux-image-6.18.55-meson64_20261004_arm64.deb
+          wget -q https://github.com/devmfc/debian-on-amlogic/releases/download/v6.18.55/linux-headers-6.18.55-meson64_20261004_arm64.deb
+          dpkg-deb -x linux-image-6.18.55-meson64_20261004_arm64.deb pkg_img
+          dpkg-deb -x linux-headers-6.18.55-meson64_20261004_arm64.deb pkg_hdr
+          
+          cp -r pkg_img/lib/modules/* ../dist/rootfs/lib/modules/
+          KERNEL_VER="6.18.55-meson64"
+          echo "KERNEL_RELEASE=${KERNEL_VER}" >> $GITHUB_ENV
+          
+          cp pkg_img/boot/vmlinuz-${KERNEL_VER} ../dist/boot/vmlinuz-${KERNEL_VER}
+          cp pkg_img/boot/config-${KERNEL_VER} ../dist/boot/config-${KERNEL_VER} || cp ../configs/config-6.18.55-meson64.config ../dist/boot/config-${KERNEL_VER}
+          
+          mkdir -p ../dist/boot/dtb-${KERNEL_VER}/amlogic
+          if [ -d pkg_img/boot/dtb-${KERNEL_VER} ]; then
+            cp -r pkg_img/boot/dtb-${KERNEL_VER}/* ../dist/boot/dtb-${KERNEL_VER}/
+          elif [ -d pkg_img/usr/lib/linux-image-${KERNEL_VER} ]; then
+            cp -r pkg_img/usr/lib/linux-image-${KERNEL_VER}/* ../dist/boot/dtb-${KERNEL_VER}/
+          fi
+          
+          cd ..
+          HDR_DIR="$(pwd)/build_tmp/pkg_hdr/usr/src/linux-headers-${KERNEL_VER}"
+          if [ -d "${HDR_DIR}" ]; then
+            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/BSP" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/WIFI" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+            make -C "${HDR_DIR}" M="$(pwd)/drivers/unisoc/BT/tty-sdio" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CFG_AML_WIFI_DEVICE_UWE5621=y modules || true
+            TARGET_MOD_DIR="dist/rootfs/lib/modules/${KERNEL_VER}/kernel/drivers/net/wireless"
+            mkdir -p "${TARGET_MOD_DIR}"
+            find drivers/unisoc -name "*.ko" -exec cp {} "${TARGET_MOD_DIR}/" \;
+          fi
 
       # =========================================================================
       # STEP: INJECT FIRMWARES & METADATA
@@ -204,7 +190,7 @@ jobs:
           
           sudo sync
           sudo umount /mnt/fat_build
-          echo ">>> kernel_boot.fat berhasil dirakit!"
+          echo ">>> kernel_boot.fat berhasil dirakit untuk Kernel ${KERNEL_RELEASE}!"
 
       # =========================================================================
       # STEP: BUNDLE ARTIFACTS INTO ZIP & TAR.GZ
@@ -213,18 +199,15 @@ jobs:
         run: |
           mkdir -p release_out
           
-          # Package 1: Modul & Firmware rootfs
           echo ">>> Packaging modules & firmwares..."
           tar -czf release_out/modules_and_firmware_${KERNEL_RELEASE}.tar.gz -C dist/rootfs lib
           
-          # Package 2: Boot partition .fat
           mv kernel_boot.fat release_out/kernel_boot_${KERNEL_RELEASE}.fat
           
-          # Package 3: Complete Unified ZIP
           cd release_out
           cat << 'EOF' > README_FLASH.txt
           =======================================================
-          InnovaTex Amlogic S905X4 Custom Kernel Release
+          InnovaTex Amlogic S905X4 Native Kernel Release
           =======================================================
           - Target SoC: Amlogic S905X4 (Advan AT01 / ah212 generic)
           - Boot Partition: kernel_boot_*.fat (Flash ke Partisi Boot via flash.py)
@@ -244,13 +227,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: "v${{ env.KERNEL_RELEASE }}-${{ github.run_number }}"
-          name: "InnovaTex S905X4 Kernel v${{ env.KERNEL_RELEASE }} (Build #${{ github.run_number }})"
+          name: "InnovaTex Linux ${{ env.KERNEL_RELEASE }} (Build #${{ github.run_number }})"
           body: |
-            ## 🚀 InnovaTex Amlogic S905X4 Custom Kernel
-            - **Kernel Release:** `${{ env.KERNEL_RELEASE }}`
-            - **Hardware:** Amlogic S905X4 (Advan AT01 / ah212 generic)
-            - **Firmware Integrated:** Unisoc UWE5631 (`wcnmodem.bin`) & Ralink RT5370 (`rt2870.bin`)
-            - **Ready to flash via `flash.py`!**
+            ## 🚀 InnovaTex Amlogic S905X4 Native Kernel Release
+            - **Kernel Version:** `${{ env.KERNEL_RELEASE }}`
+            - **SoC Target:** Amlogic S905X4 (Advan AT01 / ah212 generic)
+            - **Wireless Drivers:** Unisoc UWE5631 & Ralink RT5370
+            - **Firmware Included:** `wcnmodem.bin` & `rt2870.bin`
+            - **Ready for `flash.py`!**
           files: |
             release_out/kernel_boot_${{ env.KERNEL_RELEASE }}.fat
             release_out/modules_and_firmware_${{ env.KERNEL_RELEASE }}.tar.gz
