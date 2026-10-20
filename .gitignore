@@ -1,0 +1,13 @@
+build_tmp/
+dist/
+release_out/
+*.fat
+*.tar.gz
+*.zip
+*.o
+*.ko
+*.mod*
+.tmp_versions/
+Module.symvers
+modules.order
+.*.cmd
