@@ -127,19 +127,19 @@ jobs:
           # Konfigurasi Meson64 defconfig
           if [ -f ../configs/config-6.18.55-meson64.config ]; then
             cp ../configs/config-6.18.55-meson64.config .config
-            make olddefconfig
+            make ARCH=arm64 olddefconfig
           else
-            make defconfig
+            make ARCH=arm64 defconfig
           fi
           
           echo ">>> Compiling Kernel Image & DTBs..."
-          make -j$(nproc) Image dtbs modules
+          make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
           
-          KERNEL_VER=$(make kernelrelease)
+          KERNEL_VER=$(make -s ARCH=arm64 kernelrelease)
           echo "KERNEL_RELEASE=${KERNEL_VER}" >> $GITHUB_ENV
           
           # Install modul
-          make INSTALL_MOD_PATH=../dist/rootfs modules_install
+          make ARCH=arm64 INSTALL_MOD_PATH=../dist/rootfs modules_install
           
           # Copy Boot outputs
           cd ..
@@ -186,9 +186,16 @@ jobs:
           # Salin U-Boot scripts Devmfc
           sudo cp -r boot_scripts/* /mnt/fat_build/
           
+          # Run depmod untuk update database modul
+          sudo depmod -b dist/rootfs ${KERNEL_RELEASE} || true
+
           # Sesuaikan boot.config
+          MAJOR=$(echo ${KERNEL_RELEASE} | cut -d. -f1)
+          BRANCH=$(echo ${KERNEL_RELEASE} | cut -d. -f1-2)
+          sudo sed -i "s/^majorbranch=.*/majorbranch=${MAJOR}.x.y/" /mnt/fat_build/boot.config || true
+          sudo sed -i "s/^branch=.*/branch=${BRANCH}.y/" /mnt/fat_build/boot.config || true
           sudo sed -i "s/^release=.*/release=${KERNEL_RELEASE}/" /mnt/fat_build/boot.config || true
-          sudo sed -i "s/^#box=s905x4_generic/box=s905x4_generic/" /mnt/fat_build/boot.config || true
+          sudo sed -i "s/^#*box=s905x4_generic.*/box=s905x4_generic/" /mnt/fat_build/boot.config || true
           
           # Salin Kernel & DTB
           sudo cp dist/boot/vmlinuz-${KERNEL_RELEASE} /mnt/fat_build/
