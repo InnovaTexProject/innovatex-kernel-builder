@@ -73,15 +73,27 @@ jobs:
           # Salin DTB & DTS Devmfc
           cp "$GITHUB_WORKSPACE/dtb_patches/meson-sc2-ah212-generic."* arch/arm64/boot/dts/amlogic/ || true
           # Daftarkan ke Makefile dts amlogic
-          echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
+          echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb meson-sc2-ah212-generic-gbit.dtb meson-sc2-ah212.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
           
           # Setup Kernel Config
           if [ -f ../configs/config-6.18.55-meson64.config ]; then
             cp ../configs/config-6.18.55-meson64.config .config
-            make ARCH=arm64 olddefconfig
           else
             make ARCH=arm64 defconfig
           fi
+          
+          # Inject QEMU Virt, PL011 Serial Console & VirtIO Storage drivers (Built-in =y)
+          ./scripts/config --enable CONFIG_SERIAL_AMBA_PL011
+          ./scripts/config --enable CONFIG_SERIAL_AMBA_PL011_CONSOLE
+          ./scripts/config --enable CONFIG_VIRTIO
+          ./scripts/config --enable CONFIG_VIRTIO_PCI
+          ./scripts/config --enable CONFIG_VIRTIO_PCI_MODERN
+          ./scripts/config --enable CONFIG_VIRTIO_BLK
+          ./scripts/config --enable CONFIG_VIRTIO_NET
+          ./scripts/config --enable CONFIG_VIRTIO_CONSOLE
+          ./scripts/config --enable CONFIG_HW_RANDOM_VIRTIO
+          
+          make ARCH=arm64 olddefconfig
           
           echo ">>> Compiling Linux 7.3 Kernel Image & DTBs..."
           make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
@@ -98,8 +110,8 @@ jobs:
           
           mkdir -p dist/boot/dtb-${KERNEL_VER}/amlogic
           find linux-7.3/arch/arm64/boot/dts/amlogic/ -name "*.dtb" -exec cp {} dist/boot/dtb-${KERNEL_VER}/amlogic/ \;
-          # Pastikan DTB ah212 generic ada
-          cp dtb_patches/meson-sc2-ah212-generic.dtb dist/boot/dtb-${KERNEL_VER}/amlogic/ || true
+          # Pastikan DTB ah212 generic & variants ada
+          cp dtb_patches/meson-sc2-ah212*.dtb dist/boot/dtb-${KERNEL_VER}/amlogic/ || true
           
           # Compile Unisoc drivers
           echo ">>> Compiling Driver Unisoc UWE5631 against Linux 7.3..."
@@ -228,7 +240,7 @@ jobs:
 
       - name: 🚀 Upload GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: "v${{ env.KERNEL_RELEASE }}-${{ github.run_number }}"
           name: "InnovaTex Linux ${{ env.KERNEL_RELEASE }} (Build #${{ github.run_number }})"
