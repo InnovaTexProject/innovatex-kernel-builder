@@ -73,7 +73,7 @@ jobs:
           # Salin DTB & DTS Devmfc
           cp "$GITHUB_WORKSPACE/dtb_patches/meson-sc2-ah212-generic."* arch/arm64/boot/dts/amlogic/ || true
           # Daftarkan ke Makefile dts amlogic
-          echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb meson-sc2-ah212-generic-gbit.dtb meson-sc2-ah212.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
+          echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
           
           # Setup Kernel Config
           if [ -f ../configs/config-6.18.55-meson64.config ]; then
