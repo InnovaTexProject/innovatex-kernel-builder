@@ -67,7 +67,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           
           echo ">>> Injecting Devmfc S905X4 SC2 Drivers & Patches..."
-          patch -p1 -N --batch < "$GITHUB_WORKSPACE/patches/devmfc-sc2.patch" || true
+          patch -p1 -N --batch < "$GITHUB_WORKSPACE/patches/devmfc-sc2-clean.patch" || true
           
           echo ">>> Injecting S905X4 SC2 Device Tree & Patches..."
           # Salin DTB & DTS Devmfc
