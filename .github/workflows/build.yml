@@ -65,9 +65,12 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           
+          echo ">>> Injecting Devmfc S905X4 SC2 Drivers & Patches..."
+          patch -p1 -N --batch < "$GITHUB_WORKSPACE/patches/devmfc-sc2.patch" || true
+          
           echo ">>> Injecting S905X4 SC2 Device Tree & Patches..."
           # Salin DTB & DTS Devmfc
-          cp ../dtb_patches/meson-sc2-ah212-generic.* arch/arm64/boot/dts/amlogic/ || true
+          cp "$GITHUB_WORKSPACE/dtb_patches/meson-sc2-ah212-generic."* arch/arm64/boot/dts/amlogic/ || true
           # Daftarkan ke Makefile dts amlogic
           echo 'dtb-$(CONFIG_ARCH_MESON) += meson-sc2-ah212-generic.dtb' >> arch/arm64/boot/dts/amlogic/Makefile
           
