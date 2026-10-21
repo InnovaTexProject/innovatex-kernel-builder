@@ -22,6 +22,7 @@ on:
       - 'firmware/**'
       - 'dtb_patches/**'
       - 'boot_scripts/**'
+      - 'patches/**'
 
 permissions:
   contents: write
