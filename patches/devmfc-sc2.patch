@@ -5620,10 +5620,13 @@ index a6453ffeb7532e..032721aaf7d11b 100644
  
  struct meson_msr_id {
  	struct meson_msr *priv;
-@@ -488,6 +488,136 @@ static struct meson_msr_id clk_msr_sm1[CLK_MSR_MAX] = {
+@@ -488,6 +488,140 @@ static struct meson_msr_id clk_msr_sm1[CLK_MSR_MAX] = {
  	CLK_MSR_ID(127, "csi2_data"),
  };
  
++#ifndef CLK_MSR_MAX
++#define CLK_MSR_MAX 200
++#endif
 +static struct meson_msr_id clk_msr_sc2[CLK_MSR_MAX] = {
 +	CLK_MSR_ID(0, "cts_sys_clk"),
 +	CLK_MSR_ID(1, "cts_axi_clk "),
